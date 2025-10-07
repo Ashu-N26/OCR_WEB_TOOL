@@ -4,18 +4,6 @@ services:
     env: docker
     plan: free
     autoDeploy: true
-
-    # Environment variables for flexibility
-    envVars:
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: PORT
-        value: "8000"
-
-    # Health check endpoint (Render uses this to check if your app is alive)
+    branch: main
     healthCheckPath: /health
 
-    # Auto-deploy on every push to main branch
-    branch: main
-    buildCommand: ""
-    startCommand: ""
