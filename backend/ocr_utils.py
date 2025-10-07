@@ -32,3 +32,4 @@ def extract_tables_from_pdf(pdf_path: str):
     except Exception as e:
         print("Table extraction error:", e)
     return tables
+
