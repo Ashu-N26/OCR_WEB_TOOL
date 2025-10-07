@@ -38,3 +38,4 @@ async def upload_files(files: list[UploadFile] = File(...)):
         })
         os.remove(tmp_path)
     return {"results": results}
+
