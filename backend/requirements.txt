@@ -1,31 +1,16 @@
-# Web framework & server
-fastapi
-uvicorn[standard]
+fastapi==0.111.0
+uvicorn==0.30.1
+pydantic==2.9.2
+python-multipart==0.0.9
+pytesseract==0.3.13
+pdf2image==1.17.0
+Pillow==10.4.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+PyMuPDF==1.24.3
+pdfminer.six==20231228
+fitz==0.0.1.dev2
+requests==2.32.3
 
-# File uploads & static file serving
-python-multipart
-aiofiles
-
-# OCR & image/pdf handling
-pytesseract
-Pillow
-PyMuPDF          # fitz, good for extracting text from native PDFs
-pdf2image        # optional fallback if you want to rasterize PDFs to images
-
-# Table extraction & PDF parsing
-camelot-py[cv]   # best-effort table extraction (requires system deps)
-tabula-py        # optional fallback (requires Java)
-
-# Data handling & exports
-pandas
-numpy
-openpyxl         # write Excel files if you implement .xlsx export
-PyPDF2           # helpful PDF utilities / fallback parsing
-
-# Headless image processing for Camelot / OpenCV usage
-opencv-python-headless
-
-# Utility / optional helpers
-python-dateutil
 
 
