@@ -1,40 +1,35 @@
-FROM python:3.11-slim
+# Use lightweight Python image
+FROM python:3.10-slim
 
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PORT=8000
+
+# Create and set working directory
 WORKDIR /app
 
-# Install system packages required by OCR/table libs
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    default-jre \
-    pkg-config \
-    poppler-utils \
-    libpoppler-cpp-dev \
+# Install system dependencies required for OCR + PDF
+RUN apt-get update && apt-get install -y \
     tesseract-ocr \
-    tesseract-ocr-eng \
-    libtesseract-dev \
-    libleptonica-dev \
-    ghostscript \
-    libjpeg-dev \
-    zlib1g-dev \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    poppler-utils \
+    libgl1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (helps layer caching)
-COPY backend/requirements.txt .
-
-# Install Python deps
+# Copy project files
+COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Copy application code
-COPY backend/ ./backend
-COPY frontend/ ./frontend
+COPY . .
 
-EXPOSE 8000
+# Expose port for Render
+EXPOSE $PORT
 
-# Use Render's PORT env var at runtime
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"]
+# Command to run app
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+
 
 
 
