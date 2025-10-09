@@ -5,10 +5,12 @@ pytesseract==0.3.13
 Pillow==10.4.0
 PyMuPDF==1.24.3
 pdf2image==1.17.0
+pdfplumber==0.8.0
 numpy==1.26.4
 pandas==2.2.2
 opencv-python-headless==4.10.0.84
-camelot-py[cv]==0.10.1
+pdfminer.six==20231228
+
 
 
 
