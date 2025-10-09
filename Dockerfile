@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
-    default-jre \
     pkg-config \
     poppler-utils \
     libpoppler-cpp-dev \
@@ -37,12 +36,13 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r ./requirements.txt
 
-# Copy app code: backend + frontend
+# Copy application files
 COPY backend/ ./backend
 COPY frontend/ ./frontend
 
 EXPOSE 8000
 
-# Start FastAPI app (use Render's PORT when present)
+# Start FastAPI app (use Render's $PORT when present)
 CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+
 
