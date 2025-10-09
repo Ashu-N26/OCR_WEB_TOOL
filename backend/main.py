@@ -68,3 +68,4 @@ async def extract_endpoint(
         logger.exception("Extraction error: %s", e)
         return JSONResponse({"error": str(e)}, status_code=500)
 
+
