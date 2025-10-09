@@ -1,85 +1,136 @@
+# backend/main.py
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-import pytesseract
-from PIL import Image
-import fitz  # PyMuPDF for PDFs
 import io
 import os
+import tempfile
+import traceback
 
-app = FastAPI(title="OCR Web Tool", description="Extract text/data from images and PDFs with high accuracy")
+import pytesseract
+from PIL import Image
 
-# Allow frontend requests (safe even if frontend served from same origin)
+import fitz  # PyMuPDF for native PDF text
+from pdf2image import convert_from_bytes
+
+# local table extractor module
+from table_extractor import extract_tables_from_pdf_bytes, extract_tables_from_image
+
+app = FastAPI(title="OCR Web Tool (Text + Table Extractor)")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
-# -------- OCR Utility Functions -------- #
-def extract_text_from_image(file_bytes: bytes) -> str:
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
+def _extract_text_from_image_bytes(file_bytes: bytes) -> str:
     try:
-        image = Image.open(io.BytesIO(file_bytes))
+        image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
         text = pytesseract.image_to_string(image, lang="eng")
         return text.strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Image processing error: {str(e)}")
+    except Exception:
+        return ""
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+
+def _extract_text_from_pdf_bytes_native(pdf_bytes: bytes) -> str:
     try:
-        pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
-        text = ""
-        for page in pdf_document:
-            text += page.get_text("text") + "\n"
-        return text.strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"PDF processing error: {str(e)}")
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text_parts = []
+        for page in doc:
+            txt = page.get_text("text")
+            if txt:
+                text_parts.append(txt)
+        out = "\n".join(text_parts).strip()
+        return out
+    except Exception:
+        return ""
 
-# -------- API Routes -------- #
-@app.get("/health")
-def health_check():
-    """Simple endpoint for Render health monitoring"""
-    return {"status": "OK"}
+
+def _extract_text_from_pdf_bytes_ocr(pdf_bytes: bytes) -> str:
+    text = ""
+    try:
+        images = convert_from_bytes(pdf_bytes, dpi=300)
+        for i, img in enumerate(images):
+            page_text = pytesseract.image_to_string(img, lang="eng")
+            text += f"\n--- Page {i+1} ---\n{page_text.strip()}\n"
+    except Exception:
+        pass
+    return text.strip()
+
 
 @app.post("/extract")
-async def extract_text(file: UploadFile = File(...)):
+async def extract(file: UploadFile = File(...)):
     """
-    Extract text from uploaded image or PDF.
-    Returns structured JSON response.
+    Extract text and tables from uploaded PDF or image.
+    Response:
+    {
+      "filename": "...",
+      "extracted_text": "...",
+      "tables": [ { "page": n, "type": "...", "data": [ [row], [row], ... ] }, ... ]
+    }
     """
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
+    filename = file.filename or "file"
+    contents = await file.read()
 
-    content = await file.read()
-    filename = file.filename.lower()
+    try:
+        if filename.lower().endswith(".pdf"):
+            # 1) Extract tables (Camelot or OCR fallback)
+            tables = extract_tables_from_pdf_bytes(contents)
 
-    if filename.endswith((".png", ".jpg", ".jpeg")):
-        text = extract_text_from_image(content)
-    elif filename.endswith(".pdf"):
-        text = extract_text_from_pdf(content)
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Please upload a PDF or image.")
+            # 2) Try native PDF text extraction first
+            text = _extract_text_from_pdf_bytes_native(contents)
+            if not text or len(text) < 30:
+                # fallback to OCR raster pages
+                text = _extract_text_from_pdf_bytes_ocr(contents)
 
-    if not text.strip():
-        return JSONResponse({"text": "", "message": "No readable text found in the uploaded file"})
+            return JSONResponse({
+                "filename": filename,
+                "extracted_text": text,
+                "tables": tables
+            })
 
-    return {"filename": filename, "extracted_text": text}
+        elif filename.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".tiff")):
+            # image file
+            # text via pytesseract
+            text = _extract_text_from_image_bytes(contents)
+            # tables from image
+            try:
+                img = Image.open(io.BytesIO(contents)).convert("RGB")
+                tables = extract_tables_from_image(img)
+            except Exception:
+                tables = []
 
-# -------- Serve Frontend -------- #
-# Serve HTML/JS/CSS from the frontend folder
+            return JSONResponse({
+                "filename": filename,
+                "extracted_text": text,
+                "tables": tables
+            })
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Upload PDF or image.")
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}\n{tb}")
+
+
+# Serve frontend static files (combined deployment)
 frontend_dir = os.path.join(os.path.dirname(__file__), "../frontend")
 if os.path.exists(frontend_dir):
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 else:
-    print("⚠️ Frontend folder not found — static file serving disabled.")
+    print("Frontend folder not found; static serving disabled.")
 
-# -------- Run Locally (optional) -------- #
-# Only used for local dev — ignored by Render
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
 
 
 
