@@ -9,7 +9,8 @@ pdfplumber==0.8.0
 numpy==1.26.4
 pandas==2.2.2
 opencv-python-headless==4.10.0.84
-pdfminer.six==20231228
+pdfminer.six  # removed pin on version; allow pdfplumber to pull compatible version
+
 
 
 
