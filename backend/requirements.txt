@@ -1,0 +1,18 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+
+pytesseract==0.3.13
+pdf2image==1.17.0
+Pillow==10.4.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+PyMuPDF==1.24.3
+pdfplumber==0.8.0
+pandas==2.2.2
+
+# Optional table libraries (Camelot / Tabula require extra OS deps)
+# camelot-py==0.11.0
+# tabula-py==2.9.3
+
+requests==2.32.3
