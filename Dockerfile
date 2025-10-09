@@ -1,55 +1,49 @@
-# -----------------------------
-# Base Image
-# -----------------------------
-FROM python:3.10-slim
+# Dockerfile (repo root) - robust for varying repo layouts
+FROM python:3.11-slim
 
-# -----------------------------
-# Environment Setup
-# -----------------------------
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PIP_NO_CACHE_DIR=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# -----------------------------
-# Install System Dependencies
-# -----------------------------
-RUN apt-get update && apt-get install -y \
+WORKDIR /app
+
+# Install system dependencies for OCR & PDF processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     tesseract-ocr \
+    tesseract-ocr-eng \
     poppler-utils \
     ghostscript \
-    libglib2.0-dev \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgl1-mesa-glx \
+    libleptonica-dev \
+    libtesseract-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    libpng-dev \
+    libopenjp2-7-dev \
+    libtiff5-dev \
+    libgl1 \
+    libglib2.0-0 \
     default-jre \
     curl \
     git \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# -----------------------------
-# Set Work Directory
-# -----------------------------
-WORKDIR /app
-
-# -----------------------------
-# Copy Requirements and Install
-# -----------------------------
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install -r requirements.txt
-
-# -----------------------------
-# Copy Full Application
-# -----------------------------
+# Copy the entire repo into the image (safe and simple)
 COPY . /app
 
-# -----------------------------
-# Expose Port and Start Server
-# -----------------------------
-EXPOSE 8080
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Install Python dependencies from the first requirements file that exists:
+# Priority: backend/requirements.txt -> requirements.txt (root)
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; \
+    elif [ -f requirements.txt ]; then pip install -r requirements.txt; \
+    else echo "ERROR: no requirements.txt found" && exit 1; fi
+
+# Expose port (Render will supply $PORT)
+EXPOSE 8000
+
+# Start application
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+
 
 
 
