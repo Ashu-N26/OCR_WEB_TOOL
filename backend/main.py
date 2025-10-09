@@ -12,12 +12,11 @@ from PIL import Image
 import fitz  # PyMuPDF
 from pdf2image import convert_from_bytes
 
-# package-aware import (backend.table_extractor)
+# package-aware import
 from backend.table_extractor import extract_tables_from_pdf_bytes, extract_tables_from_image
 
 app = FastAPI(title="OCR Web Tool", description="Extract text and tables from PDFs/images")
 
-# Allow CORS for all origins (public link)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -63,10 +62,6 @@ def _text_from_pdf_ocr(pdf_bytes: bytes) -> str:
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
-    """
-    Single-file upload handler.
-    Returns JSON: { filename, extracted_text, tables: [ {page, type, data}, ... ] }
-    """
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
     filename = file.filename or "file"
@@ -74,9 +69,7 @@ async def extract(file: UploadFile = File(...)):
 
     try:
         if filename.lower().endswith(".pdf"):
-            # tables
             tables = extract_tables_from_pdf_bytes(contents)
-            # text: try native first, then OCR fallback
             text = _text_from_pdf_native(contents)
             if not text or len(text) < 20:
                 text = _text_from_pdf_ocr(contents)
@@ -97,13 +90,13 @@ async def extract(file: UploadFile = File(...)):
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}\n{tb}")
 
-
-# Serve frontend static files (combined single deploy)
+# Serve frontend static files (combined deployment)
 frontend_dir = os.path.join(os.path.dirname(__file__), "../frontend")
 if os.path.exists(frontend_dir):
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 else:
     print("⚠️ Frontend folder not found; static serving disabled.")
+
 
 
 
