@@ -1,6 +1,5 @@
 # backend/table_extractor.py
 import io
-import tempfile
 import os
 from typing import List, Dict, Any
 
@@ -9,11 +8,10 @@ import pytesseract
 from pytesseract import Output
 import numpy as np
 
-# pdfplumber for table extraction from digital PDFs
 import pdfplumber
 from pdf2image import convert_from_bytes
 
-# --- Helpers: group words into rows and columns (heuristic) --- #
+
 def _group_words_into_rows(words: List[Dict]) -> List[List[Dict]]:
     if not words:
         return []
@@ -38,8 +36,8 @@ def _group_words_into_rows(words: List[Dict]) -> List[List[Dict]]:
                 current = {"y_sum": cy, "count": 1, "words": [w]}
     if current["count"] > 0:
         rows.append(current["words"])
-    # sort words inside each row by left coordinate
     return [[dict(w) for w in sorted(r, key=lambda x: x["left"])] for r in rows]
+
 
 def _compute_column_cuts(all_centers: List[float]) -> List[float]:
     if len(all_centers) < 2:
@@ -55,6 +53,7 @@ def _compute_column_cuts(all_centers: List[float]) -> List[float]:
     for idx in split_indices:
         cuts.append((arr[idx] + arr[idx + 1]) / 2.0)
     return cuts
+
 
 def _row_words_to_cells(rows: List[List[Dict]], cuts: List[float]) -> List[List[str]]:
     if not rows:
@@ -76,12 +75,8 @@ def _row_words_to_cells(rows: List[List[Dict]], cuts: List[float]) -> List[List[
         tables.append([c.strip() for c in cells])
     return tables
 
-# --- Main functions --- #
+
 def extract_tables_from_image(pil_image: Image.Image) -> List[Dict[str, Any]]:
-    """
-    OCR-based table detection from an image (PIL Image).
-    Returns list of table dicts: {"page": 1, "type": "ocr", "data": rows}
-    """
     try:
         img = pil_image.convert("RGB")
         data = pytesseract.image_to_data(img, output_type=Output.DICT)
@@ -122,14 +117,10 @@ def extract_tables_from_image(pil_image: Image.Image) -> List[Dict[str, Any]]:
     table_rows = _row_words_to_cells(rows, cuts)
     return [{"page": 1, "type": "ocr", "data": table_rows}]
 
-def extract_tables_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
-    """
-    Try pdfplumber (digital PDF) to extract tables. If none found, convert pages to images and use OCR method.
-    Returns list of table dicts.
-    """
-    results = []
 
-    # 1) Try pdfplumber
+def extract_tables_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
+    results = []
+    # 1) Try pdfplumber (digital PDF)
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for i, page in enumerate(pdf.pages, start=1):
@@ -139,16 +130,14 @@ def extract_tables_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
                         if tbl and any(any(cell for cell in row) for row in tbl):
                             results.append({"page": i, "type": "pdfplumber", "data": tbl})
                 except Exception:
-                    # skip page table errors
                     continue
     except Exception:
-        # pdfplumber may fail on some PDFs; fallback below
         pass
 
     if results:
         return results
 
-    # 2) Fallback: convert pages to images and apply OCR-based extraction
+    # 2) Fallback: convert pages to images and OCR-based extraction
     try:
         pil_pages = convert_from_bytes(pdf_bytes, dpi=300)
     except Exception:
@@ -161,4 +150,5 @@ def extract_tables_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
         results.extend(page_tables)
 
     return results
+
 
