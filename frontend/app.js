@@ -49,7 +49,6 @@ function renderResult(result, container) {
   title.textContent = result.filename || 'result';
   wrapper.appendChild(title);
 
-  // extracted text
   const txtHead = document.createElement('h4');
   txtHead.textContent = 'Extracted Text:';
   wrapper.appendChild(txtHead);
@@ -57,7 +56,6 @@ function renderResult(result, container) {
   pre.textContent = result.extracted_text || '';
   wrapper.appendChild(pre);
 
-  // tables
   if (result.tables && result.tables.length > 0) {
     const tbHead = document.createElement('h4');
     tbHead.textContent = 'Detected Tables:';
@@ -129,6 +127,7 @@ function downloadTableCSV(data, filename) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
 
 
 
