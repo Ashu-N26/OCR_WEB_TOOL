@@ -1,9 +1,15 @@
 services:
   - type: web
-    name: ocr-web-tool
+    name: oce-web-tool
     env: docker
+    region: oregon
     plan: free
     autoDeploy: true
-    branch: main
-    healthCheckPath: /health
+    healthCheckPath: /
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TESSDATA_PREFIX
+        value: "/usr/share/tesseract-ocr/4.00/tessdata/"
+
 
