@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install OS-level dependencies needed for OCR / PDF / image libs
+# Install OS-level dependencies required for OCR / PDF processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
@@ -32,17 +32,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python packages
+# Copy backend requirements and install Python deps
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r ./requirements.txt
 
-# Copy application code (backend + frontend)
+# Copy app code: backend + frontend
 COPY backend/ ./backend
 COPY frontend/ ./frontend
 
-# Expose port (Render uses $PORT at runtime)
 EXPOSE 8000
 
-# Start the app (use ${PORT:-8000} for local / Render compatibility)
+# Start FastAPI app (use Render's PORT when present)
 CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+
