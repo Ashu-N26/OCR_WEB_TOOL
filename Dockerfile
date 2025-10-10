@@ -1,60 +1,66 @@
-# Dockerfile (repo root) - robust: copy repo then install whichever requirements file exists
-FROM python:3.11-slim
+# ============================================================
+# Dockerfile — OCR Web Tool (FastAPI + Hybrid OCR Extractor)
+# Base: python:3.10-slim
+# Optimized for Render deployment
+# ============================================================
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# ---------------------------
+# 1️⃣ Base image and system deps
+# ---------------------------
+FROM python:3.10-slim
+
+# Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Update apt, install OS-level dependencies
+# - tesseract-ocr: OCR engine
+# - poppler-utils: for pdf2image (pdftoppm)
+# - ghostscript: fallback PDF rasterizer
+# - libgl1, libsm6, libxext6, libxrender1: required for OpenCV headless
+# - default-jre: required by some PDF parsing tools (failsafe)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        poppler-utils \
+        ghostscript \
+        libgl1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        libglib2.0-0 \
+        default-jre && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------
+# 2️⃣ Set working directory
+# ---------------------------
 WORKDIR /app
 
-# System packages (OCR + PDF processing + minimal libs required by opencv)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    tesseract-ocr \
-    poppler-utils \
-    ghostscript \
-    libleptonica-dev \
-    libtesseract-dev \
-    libjpeg-dev \
-    zlib1g-dev \
-    libpng-dev \
-    libopenjp2-7-dev \
-    libtiff5-dev \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgl1 \
-    default-jre \
-    curl \
-    git \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# ---------------------------
+# 3️⃣ Copy dependency file & install Python packages
+# ---------------------------
+# COPY backend/requirements.txt ./   # <- earlier failed because backend/requirements.txt didn't exist
+COPY requirements.txt ./
 
-# Copy whole repo (makes build robust to file/paths)
-COPY . /app
+# Upgrade pip (to avoid resolver bugs)
+RUN pip install --upgrade pip
 
-# Upgrade pip & install whichever requirements file exists
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    if [ -f backend/requirements.txt ]; then \
-        pip install --no-cache-dir -r backend/requirements.txt; \
-    elif [ -f requirements.txt ]; then \
-        pip install --no-cache-dir -r requirements.txt; \
-    else \
-        echo "ERROR: No requirements.txt found at backend/requirements.txt or requirements.txt" && exit 1; \
-    fi
+# Install dependencies
+RUN pip install -r requirements.txt
 
-# Expose port used by uvicorn (Render sets PORT environment variable)
+# ---------------------------
+# 4️⃣ Copy full project
+# ---------------------------
+COPY . .
+
+# ---------------------------
+# 5️⃣ Expose port and set env
+# ---------------------------
+ENV PORT=8000
 EXPOSE 8000
 
-# Start the app. This points to backend.main:app (adjustable)
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
-
-
-
-
-
-
-
-
-
-
+# ---------------------------
+# 6️⃣ Command to start FastAPI app
+# ---------------------------
+# Uvicorn loads backend.main:app entrypoint
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
