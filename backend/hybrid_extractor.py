@@ -119,13 +119,28 @@ def _fuzzy_contains(haystack: str, needle: str, threshold: float = 0.65) -> bool
 
 
 # -----------------------
-# Section pattern helpers
+# Section pattern helpers (FIXED)
 # -----------------------
 def _make_section_patterns(section_keyword: str) -> List[re.Pattern]:
+    """
+    Build tolerant regex patterns for a section keyword like "2.14".
+    Avoid using re.sub with replacement strings containing backslashes (which caused re.error).
+    We construct the pattern by iterating characters of the keyword and escaping non-dots,
+    and replacing '.' with a permissive group that allows spaces/dots/commas between the numbers.
+    """
     base = (section_keyword or "").strip()
     if not base:
         return []
-    base_fuzzy = re.sub(r'\.', r'[\s\.,]*', re.escape(base))
+    # Build fuzzy version safely (no re.sub replacement with backslashes)
+    parts = []
+    for ch in base:
+        if ch == ".":
+            # allow flexible separators for dot: spaces, dots, commas repeated
+            parts.append(r'[\s\.,]*')
+        else:
+            parts.append(re.escape(ch))
+    base_fuzzy = "".join(parts)
+
     variants = [
         rf"{base_fuzzy}",
         rf"{base_fuzzy}.*approach",
@@ -139,7 +154,8 @@ def _make_section_patterns(section_keyword: str) -> List[re.Pattern]:
         try:
             patterns.append(re.compile(v, re.IGNORECASE))
         except Exception:
-            continue
+            # ignore compilation problems for a variant
+            logger.debug("failed to compile pattern variant: %s", v)
     return patterns
 
 
