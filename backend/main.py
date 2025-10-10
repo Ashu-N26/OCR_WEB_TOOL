@@ -1,11 +1,13 @@
 # backend/main.py
 """
-Robust FastAPI entrypoint for OCR_Web_Tool.
+Backend FastAPI entrypoint for OCR Web Tool.
 
-Behavior:
- - Exposes /health and /extract endpoints (API).
- - If frontend index.html exists (common paths), serve it at "/" and mount static assets.
- - Tries to import extract_tables from backend.table_extractor (preferred) or backend.hybrid_extractor.
+- Tries to import `extract_tables` from backend.table_extractor (wrapper) first,
+  then backend.hybrid_extractor as a fallback.
+- Exposes:
+    GET  /health
+    POST /extract?section=2.14&debug=false&dpi=300   (multipart file=@...)
+- If a frontend/index.html (or frontend/build/index.html etc.) exists it will be served at "/".
 """
 
 import os
@@ -16,36 +18,38 @@ from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# ---------------------------
-# Logging
-# ---------------------------
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backend.main")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# ---------------------------
-# Attempt to import extractor (robust)
-# ---------------------------
+# -------------------------
+# Import extractor (robust)
+# -------------------------
 extract_tables = None
+_import_error = None
 try:
-    from backend.table_extractor import extract_tables as _ext  # wrapper
-    extract_tables = _ext
-    logger.info("Using backend.table_extractor")
-except Exception:
+    # Prefer wrapper that delegates to hybrid extractor (if present)
+    from backend.table_extractor import extract_tables as _extract  # type: ignore
+    extract_tables = _extract
+    logger.info("Loaded extractor from backend.table_extractor")
+except Exception as e1:
+    _import_error = e1
     try:
-        from backend.hybrid_extractor import extract_tables as _ext2
-        extract_tables = _ext2
-        logger.info("Using backend.hybrid_extractor")
-    except Exception:
-        extract_tables = None
-        logger.warning("No extractor found: backend.table_extractor or backend.hybrid_extractor not importable")
+        from backend.hybrid_extractor import extract_tables as _extract2  # type: ignore
+        extract_tables = _extract2
+        logger.info("Loaded extractor from backend.hybrid_extractor")
+    except Exception as e2:
+        logger.warning("Could not import backend.table_extractor or backend.hybrid_extractor.")
+        logger.debug("table_extractor import error: %s", e1)
+        logger.debug("hybrid_extractor import error: %s", e2)
+        _import_error = e2
 
-# ---------------------------
-# App init
-# ---------------------------
-app = FastAPI(title="OCR Web Tool - Backend", version="1.0.0")
+# -------------------------
+# FastAPI app
+# -------------------------
+app = FastAPI(title="OCR Web Tool Backend", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,53 +57,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------
-# API routes
-# ---------------------------
+# -------------------------
+# Health endpoint
+# -------------------------
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
+
+# -------------------------
+# Extract endpoint
+# -------------------------
 @app.post("/extract")
 async def extract_endpoint(
     file: UploadFile = File(...),
-    section: Optional[str] = Query("2.14", description="Section keyword to search for"),
-    debug: Optional[bool] = Query(False, description="Return debug image base64"),
-    dpi: Optional[int] = Query(300, description="DPI used to rasterize PDF pages"),
+    section: Optional[str] = Query("2.14", description="Section keyword to search for (e.g. '2.14')"),
+    debug: Optional[bool] = Query(False, description="Return debug overlay base64 in result"),
+    dpi: Optional[int] = Query(300, description="DPI to rasterize PDF pages (higher = better OCR)"),
 ):
     """
-    Upload a PDF or image and extract the table located at the provided section (default '2.14').
-    Returns:
-      { pages: [...], summary: {...} }
+    Upload a PDF or image and extract table(s) in the specified section.
+    Returns: { pages: [...], summary: {...} } (structure produced by extract_tables)
     """
     if not file:
         return JSONResponse({"error": "no file uploaded"}, status_code=400)
 
-    contents = await file.read()
+    filename = file.filename or "file"
+    try:
+        contents = await file.read()
+    except Exception as e:
+        logger.exception("Failed to read uploaded file: %s", e)
+        return JSONResponse({"error": f"failed to read uploaded file: {str(e)}"}, status_code=400)
+
     if not contents:
         return JSONResponse({"error": "empty file uploaded"}, status_code=400)
 
     if extract_tables is None:
-        logger.error("Extractor module missing.")
-        return JSONResponse({"error": "server misconfiguration: extractor not available"}, status_code=500)
+        # Provide a helpful message including the import error for debugging
+        msg = "Server misconfiguration: extractor module not available."
+        logger.error(msg)
+        logger.debug("Extractor import error: %s", _import_error)
+        return JSONResponse({"error": msg, "import_error": repr(_import_error)}, status_code=500)
+
+    # Optional: basic content type check (not required - extractor can try both)
+    # allowed_types = ["application/pdf", "image/png", "image/jpeg", "image/tiff"]
+    # if file.content_type and file.content_type not in allowed_types:
+    #    logger.warning("Uploaded content-type %s not in allowed list", file.content_type)
 
     try:
-        result = extract_tables(contents, file.filename or "file", section_keyword=section, debug=debug, dpi=dpi)
+        logger.info("Received file '%s' (%d bytes). section=%s debug=%s dpi=%s", filename, len(contents), section, debug, dpi)
+        result = extract_tables(contents, filename, section_keyword=section, debug=debug, dpi=dpi)
+        # Defensive: ensure result is serializable and shaped correctly
+        if not isinstance(result, dict):
+            logger.warning("Extractor returned non-dict result; wrapping it.")
+            return JSONResponse({"pages": [], "summary": {"raw_result": str(result)}}, status_code=200)
         return JSONResponse(result)
     except Exception as e:
+        tb = traceback.format_exc()
         logger.exception("Extraction failed: %s", e)
-        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=500)
+        return JSONResponse({"error": str(e), "traceback": tb}, status_code=500)
 
-# ---------------------------
-# Serve frontend (if present)
-# ---------------------------
-# Look for index.html in common frontend output locations:
-REPO_ROOT = Path(__file__).resolve().parents[1]  # two levels up: repo root
+
+# -------------------------
+# Serve frontend if present (mount last so API wins)
+# -------------------------
+REPO_ROOT = Path(__file__).resolve().parents[1]  # repo root (two levels up from backend/main.py)
 candidates = [
     REPO_ROOT / "frontend" / "index.html",
-    REPO_ROOT / "frontend" / "dist" / "index.html",
     REPO_ROOT / "frontend" / "build" / "index.html",
-    REPO_ROOT / "frontend" / "public" / "index.html",
+    REPO_ROOT / "frontend" / "dist" / "index.html",
     REPO_ROOT / "index.html",
 ]
 
@@ -111,27 +137,27 @@ for p in candidates:
 
 if INDEX_PATH:
     FRONTEND_DIR = INDEX_PATH.parent
-    # Mount static files at / (after routes defined above so API endpoints take precedence)
+    # Mount static files at root (API endpoints already defined above; they take precedence)
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
-    logger.info("Serving frontend index from: %s", INDEX_PATH)
+    logger.info("Serving frontend from: %s", FRONTEND_DIR)
 else:
-    # No frontend, provide helpful root endpoint
-    @app.get("/", response_class=JSONResponse)
+    # Root fallback that explains usage
+    @app.get("/")
     async def root_no_frontend():
         return {
             "status": "running",
-            "message": "OCR Web Tool backend running. No frontend served.",
-            "endpoints": {
+            "message": "OCR Web Tool backend running. No frontend found to serve at root.",
+            "usage": {
                 "health": "/health",
-                "extract (POST multipart/form-data file)": "/extract"
+                "extract (POST multipart/form-data file)": "/extract?section=2.14&debug=false&dpi=300"
             }
         }
 
-# If you still want an HTML fallback even when no frontend present, uncomment below:
-# @app.get("/", response_class=HTMLResponse)
-# async def root_html_fallback():
-#     return "<html><body><h1>OCR Web Tool</h1><p>Use /extract endpoint to upload files.</p></body></html>"
 
-
-
-
+# -------------------------
+# If run directly for local dev
+# -------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, log_level="info")
