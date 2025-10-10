@@ -1,1 +1,2 @@
-echo "" > backend/__init__.py
+# backend/__init__.py
+# (leave empty)
