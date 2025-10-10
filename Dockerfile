@@ -1,40 +1,24 @@
-# Dockerfile (repo root) - use python:3.11-slim
-FROM python:3.11-slim
+# Use official lightweight Python image
+FROM python:3.10-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV DEBIAN_FRONTEND=noninteractive
-
+# Set the working directory inside the container
 WORKDIR /app
 
-# Install required system packages (OCR + PDF)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    poppler-utils \
-    ghostscript \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgl1 \
-    default-jre \
-    curl \
-    git \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Copy only backend dependencies first for faster caching
+COPY backend/requirements.txt .
 
-# Copy requirements (root-level requirements.txt expected)
-COPY requirements.txt /app/requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install -r /app/requirements.txt
+# Copy the full project to the container
+COPY . .
 
-# Copy repository
-COPY . /app
-
+# Expose the FastAPI port
 EXPOSE 8000
 
-# Use the root-level main:app so Render or CLI uvicorn main:app works
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+# Run FastAPI from inside the backend folder
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
 
 
 
