@@ -1,2 +1,2 @@
 # backend/__init__.py
-# (leave empty)
+# make backend a python package
