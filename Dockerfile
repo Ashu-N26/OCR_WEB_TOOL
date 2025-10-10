@@ -1,14 +1,18 @@
-# -------------------------------
-# Stage 1: Base Environment
-# -------------------------------
-FROM python:3.10-slim
+# Dockerfile (repo root) - use python:3.11-slim
+FROM python:3.11-slim
 
-# Install required system dependencies
-RUN apt-get update && apt-get install -y \
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Install required system packages (OCR + PDF)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     poppler-utils \
     ghostscript \
-    libglib2.0-dev \
+    libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
@@ -18,28 +22,20 @@ RUN apt-get update && apt-get install -y \
     git \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# -------------------------------
-# Stage 2: Application Setup
-# -------------------------------
-WORKDIR /app
-
-# If your requirements.txt is in root (not backend/)
+# Copy requirements (root-level requirements.txt expected)
 COPY requirements.txt /app/requirements.txt
 
-# Upgrade pip and install dependencies
 RUN pip install --upgrade pip setuptools wheel
-RUN pip install -r requirements.txt
+RUN pip install -r /app/requirements.txt
 
-# Copy all your project files (backend + frontend if needed)
+# Copy repository
 COPY . /app
 
-# Expose port for FastAPI
-EXPOSE 8080
+EXPOSE 8000
 
-# -------------------------------
-# Stage 3: Run FastAPI Server
-# -------------------------------
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Use the root-level main:app so Render or CLI uvicorn main:app works
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+
 
 
 
