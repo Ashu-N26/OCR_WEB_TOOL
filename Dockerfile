@@ -1,66 +1,44 @@
-# ============================================================
-# Dockerfile — OCR Web Tool (FastAPI + Hybrid OCR Extractor)
-# Base: python:3.10-slim
-# Optimized for Render deployment
-# ============================================================
-
-# ---------------------------
-# 1️⃣ Base image and system deps
-# ---------------------------
+# -----------------------------------------------
+# Stage 1: Base image and system dependencies
+# -----------------------------------------------
 FROM python:3.10-slim
 
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Update apt, install OS-level dependencies
-# - tesseract-ocr: OCR engine
-# - poppler-utils: for pdf2image (pdftoppm)
-# - ghostscript: fallback PDF rasterizer
-# - libgl1, libsm6, libxext6, libxrender1: required for OpenCV headless
-# - default-jre: required by some PDF parsing tools (failsafe)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        tesseract-ocr \
-        poppler-utils \
-        ghostscript \
-        libgl1 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
-        libglib2.0-0 \
-        default-jre && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# ---------------------------
-# 2️⃣ Set working directory
-# ---------------------------
+# Set working directory
 WORKDIR /app
 
-# ---------------------------
-# 3️⃣ Copy dependency file & install Python packages
-# ---------------------------
-# COPY backend/requirements.txt ./   # <- earlier failed because backend/requirements.txt didn't exist
-COPY requirements.txt ./
+# Prevent Python from buffering output
+ENV PYTHONUNBUFFERED=1
 
-# Upgrade pip (to avoid resolver bugs)
-RUN pip install --upgrade pip
+# Install system-level dependencies required for OCR and PDF processing
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    poppler-utils \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN pip install -r requirements.txt
+# -----------------------------------------------
+# Stage 2: Copy and install backend dependencies
+# -----------------------------------------------
+# Copy only the requirements first (to optimize Docker caching)
+COPY backend/requirements.txt ./backend/requirements.txt
 
-# ---------------------------
-# 4️⃣ Copy full project
-# ---------------------------
+# Install Python dependencies
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# -----------------------------------------------
+# Stage 3: Copy the entire project
+# -----------------------------------------------
 COPY . .
 
-# ---------------------------
-# 5️⃣ Expose port and set env
-# ---------------------------
-ENV PORT=8000
-EXPOSE 8000
+# -----------------------------------------------
+# Stage 4: Expose FastAPI app port
+# -----------------------------------------------
+EXPOSE 10000
 
-# ---------------------------
-# 6️⃣ Command to start FastAPI app
-# ---------------------------
-# Uvicorn loads backend.main:app entrypoint
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+# -----------------------------------------------
+# Stage 5: Start the FastAPI server
+# -----------------------------------------------
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "10000"]
